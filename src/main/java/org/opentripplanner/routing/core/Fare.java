@@ -14,7 +14,9 @@
 package org.opentripplanner.routing.core;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -33,8 +35,14 @@ public class Fare {
      */
     public HashMap<FareType, Money> fare;
 
+    /**
+     * A mapping from {@link FareType} to a list of {@link FareRoute}.
+     */
+    public HashMap<FareType, List<FareRoute>> details;
+
     public Fare() {
         fare = new HashMap<FareType, Money>();
+        details = new HashMap<FareType, List<FareRoute>>();
     }
 
     public Fare(Fare aFare) {
@@ -49,6 +57,14 @@ public class Fare {
 
     public void addFare(FareType fareType, WrappedCurrency currency, int cents) {
         fare.put(fareType, new Money(currency, cents));
+    }
+
+    public void addFare(FareType fareType, Money money) {
+        fare.put(fareType, money);
+    }
+
+    public void addFareDetails(FareType fareType, List<FareRoute> newDetails) {
+        details.put(fareType, newDetails);
     }
 
     public Money getFare(FareType type) {

@@ -29,7 +29,9 @@ import org.onebusaway.gtfs.model.FareAttribute;
 import org.onebusaway.gtfs.model.Stop;
 import org.opentripplanner.routing.core.Fare;
 import org.opentripplanner.routing.core.Fare.FareType;
+import org.opentripplanner.routing.core.FareRoute;
 import org.opentripplanner.routing.core.FareRuleSet;
+import org.opentripplanner.routing.core.Money;
 import org.opentripplanner.routing.core.State;
 import org.opentripplanner.routing.core.WrappedCurrency;
 import org.opentripplanner.routing.edgetype.HopEdge;
@@ -182,19 +184,17 @@ public class DefaultFareServiceImpl implements FareService, Serializable {
                         .getCurrencyType());
                 wrappedCurrency = new WrappedCurrency(currency);
             }
-
-            float lowestCost = getLowestCost(fareType, rides, fareRules);
-
-            if (lowestCost != Float.POSITIVE_INFINITY) {
-                int fractionDigits = 2;
-                if (currency != null)
-                    fractionDigits = currency.getDefaultFractionDigits();
-                int cents = (int) Math.round(lowestCost * Math.pow(10, fractionDigits));
-                fare.addFare(fareType, wrappedCurrency, cents);
-                hasFare = true;
-            }
+            hasFare = populateFare(fare, currency, fareType, rides, fareRules);
         }
         return hasFare ? fare : null;
+    }
+
+    protected static Money getMoney(Currency currency, float cost) {
+        int fractionDigits = 2;
+        if (currency != null)
+            fractionDigits = currency.getDefaultFractionDigits();
+        int cents = (int) Math.round(cost * Math.pow(10, fractionDigits));
+        return new Money(new WrappedCurrency(currency), cents);
     }
 
     protected float getLowestCost(FareType fareType, List<Ride> rides,
@@ -220,6 +220,71 @@ public class DefaultFareServiceImpl implements FareService, Serializable {
             }
         }
         return resultTable[0][rides.size() - 1];
+    }
+
+    protected boolean populateFare(Fare fare, Currency currency, FareType fareType, List<Ride> rides,
+            Collection<FareRuleSet> fareRules) {
+        // Dynamic algorithm to calculate fare cost.
+        // Cell [i,j] holds the best (lowest) cost for a trip from rides[i] to rides[j]
+        float[][] resultTable = new float[rides.size()][rides.size()];
+        int[][] next = new int[rides.size()][rides.size()];
+
+        for (int i = 0; i < rides.size(); i++) {
+            // each diagonal
+            for (int j = 0; j < rides.size() - i; j++) {
+                float cost = calculateCost(fareType, rides.subList(j, j + i + 1), fareRules);
+                if (cost < 0) {
+                    LOG.error("negative cost for a ride sequence");
+                    cost = Float.POSITIVE_INFINITY;
+                }
+                resultTable[j][j + i] = cost;
+                next[j][j + i] = j + i;
+                for (int k = 0; k < i; k++) {
+                    float via = resultTable[j][j + k] + resultTable[j + k + 1][j + i];
+                    if (resultTable[j][j + i] > via) {
+                        resultTable[j][j + i] = via;
+                        next[j][j + i] = next[j][j + k];
+                    }
+                }
+            }
+        }
+
+        // get fare components
+        List<FareRoute> details = new ArrayList<FareRoute>();
+        int count = 0;
+        int start = 0;
+        int end = rides.size() - 1;
+        while(start <= end) {
+            // skip parts where no fare is present, we want to return something
+            // even if not all legs have fares
+
+            // we also assume rides always have standalone fares, this is how
+            // we detect connected parts with fares
+            while(start <= end && resultTable[start][start] == Float.POSITIVE_INFINITY) {
+                ++start;
+            }
+            if(start > end) {
+                break;
+            }
+            int index = start;
+            while(index <= end && resultTable[index][index] != Float.POSITIVE_INFINITY) {
+                ++index;
+            }
+
+            int via = next[start][index-1];
+            float cost = resultTable[start][via];
+            FareRoute detail = new FareRoute(getMoney(currency, resultTable[start][via]));
+            for(int i = start; i <= via; ++i) {
+                detail.addRoute(rides.get(i).route);
+            }
+            details.add(detail);
+            ++count;
+            start = via + 1;
+        }
+
+        fare.addFare(fareType, getMoney(currency, resultTable[0][rides.size()-1]));
+        fare.addFareDetails(fareType, details);
+        return count > 0;
     }
 
     protected float calculateCost(FareType fareType, List<Ride> rides,
