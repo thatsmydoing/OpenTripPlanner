@@ -71,6 +71,10 @@ public class Fare {
         return fare.get(type);
     }
 
+    public List<FareRoute> getDetails(FareType type) {
+        return details.get(type);
+    }
+
     public void addCost(int surcharge) {
         for (Money cost : fare.values()) {
             int cents = cost.getCents();
