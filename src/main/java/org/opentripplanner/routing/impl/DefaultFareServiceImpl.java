@@ -223,12 +223,41 @@ public class DefaultFareServiceImpl implements FareService, Serializable {
         return resultTable[0][rides.size() - 1];
     }
 
+    /**
+     * Builds the Fare object for the given currency, fareType and fareRules.
+     * <p>
+     * Besides calculating the lowest fare, we also break down the fare and which routes
+     * correspond to which components. Note that even if we cannot get a lowest fare
+     * (if some rides don't have fare rules), there will still be a breakdown for those
+     * parts which have fares.
+     * <p>
+     * As an example, given the rides A-B and B-C. Where A-B and B-C have fares of 10
+     * each, 2 fare detail objects are added, one with fare 10 for A-B and one with fare 10
+     * for B-C.
+     * <p>
+     * If we add the rule for A-C with a fare of 15, we will get 1 fare detail object
+     * with fare 15, which lists both A-B and B-C as routes involved.
+     * <p>
+     * If our only rule were A-B with a fare of 10, we would have no lowest fare, but
+     * we will still have one fare detail with fare 10 for the route A-B. B-C will not
+     * just not be listed at all.
+     */
     protected boolean populateFare(Fare fare, Currency currency, FareType fareType, List<Ride> rides,
             Collection<FareRuleSet> fareRules) {
         // Dynamic algorithm to calculate fare cost.
+        // This is a modified Floyd-Warshall algorithm, a key thing to remember is that
+        // rides are already edges, so when comparing "via" routes, i -> k is connected
+        // to k+1 -> j.
+
         // Cell [i,j] holds the best (lowest) cost for a trip from rides[i] to rides[j]
         float[][] resultTable = new float[rides.size()][rides.size()];
+
+        // Cell [i,j] holds the index of the ride to pass through for the best cost
+        // This is used for reconstructing which rides are grouped together
         int[][] next = new int[rides.size()][rides.size()];
+
+        // Cell [i] holds the index of the last ride that ride[i] has a fare to
+        // If it's -1, the ride does not have fares to anywhere
         int[] endOfComponent = new int[rides.size()];
         Arrays.fill(endOfComponent, -1);
 
