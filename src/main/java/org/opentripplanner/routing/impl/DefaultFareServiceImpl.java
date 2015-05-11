@@ -15,6 +15,7 @@ package org.opentripplanner.routing.impl;
 
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Currency;
 import java.util.HashMap;
@@ -228,7 +229,8 @@ public class DefaultFareServiceImpl implements FareService, Serializable {
         // Cell [i,j] holds the best (lowest) cost for a trip from rides[i] to rides[j]
         float[][] resultTable = new float[rides.size()][rides.size()];
         int[][] next = new int[rides.size()][rides.size()];
-        boolean[] connected = new boolean[rides.size()];
+        int[] endOfComponent = new int[rides.size()];
+        Arrays.fill(endOfComponent, -1);
 
         for (int i = 0; i < rides.size(); i++) {
             // each diagonal
@@ -239,7 +241,7 @@ public class DefaultFareServiceImpl implements FareService, Serializable {
                     cost = Float.POSITIVE_INFINITY;
                 }
                 if (cost < Float.POSITIVE_INFINITY) {
-                    connected[j] = true;
+                    endOfComponent[j] = j + i;
                     next[j][j + i] = j + i;
                 }
                 resultTable[j][j + i] = cost;
@@ -247,6 +249,7 @@ public class DefaultFareServiceImpl implements FareService, Serializable {
                     float via = resultTable[j][j + k] + resultTable[j + k + 1][j + i];
                     if (resultTable[j][j + i] > via) {
                         resultTable[j][j + i] = via;
+                        endOfComponent[j] = j + i;
                         next[j][j + i] = next[j][j + k];
                     }
                 }
@@ -261,20 +264,16 @@ public class DefaultFareServiceImpl implements FareService, Serializable {
         while(start <= end) {
             // skip parts where no fare is present, we want to return something
             // even if not all legs have fares
-            while(start <= end && !connected[start]) {
+            while(start <= end && endOfComponent[start] < 0) {
                 ++start;
             }
             if(start > end) {
                 break;
             }
-            int index = end;
-            while(index > start && resultTable[start][index] == Float.POSITIVE_INFINITY) {
-                --index;
-            }
 
-            int via = next[start][index];
+            int via = next[start][endOfComponent[start]];
             float cost = resultTable[start][via];
-            FareRoute detail = new FareRoute(getMoney(currency, resultTable[start][via]));
+            FareRoute detail = new FareRoute(getMoney(currency, cost));
             for(int i = start; i <= via; ++i) {
                 detail.addRoute(rides.get(i).route);
             }
