@@ -228,6 +228,7 @@ public class DefaultFareServiceImpl implements FareService, Serializable {
         // Cell [i,j] holds the best (lowest) cost for a trip from rides[i] to rides[j]
         float[][] resultTable = new float[rides.size()][rides.size()];
         int[][] next = new int[rides.size()][rides.size()];
+        boolean[] connected = new boolean[rides.size()];
 
         for (int i = 0; i < rides.size(); i++) {
             // each diagonal
@@ -237,8 +238,11 @@ public class DefaultFareServiceImpl implements FareService, Serializable {
                     LOG.error("negative cost for a ride sequence");
                     cost = Float.POSITIVE_INFINITY;
                 }
+                if (cost < Float.POSITIVE_INFINITY) {
+                    connected[j] = true;
+                    next[j][j + i] = j + i;
+                }
                 resultTable[j][j + i] = cost;
-                next[j][j + i] = j + i;
                 for (int k = 0; k < i; k++) {
                     float via = resultTable[j][j + k] + resultTable[j + k + 1][j + i];
                     if (resultTable[j][j + i] > via) {
@@ -257,21 +261,18 @@ public class DefaultFareServiceImpl implements FareService, Serializable {
         while(start <= end) {
             // skip parts where no fare is present, we want to return something
             // even if not all legs have fares
-
-            // we also assume rides always have standalone fares, this is how
-            // we detect connected parts with fares
-            while(start <= end && resultTable[start][start] == Float.POSITIVE_INFINITY) {
+            while(start <= end && !connected[start]) {
                 ++start;
             }
             if(start > end) {
                 break;
             }
-            int index = start;
-            while(index <= end && resultTable[index][index] != Float.POSITIVE_INFINITY) {
-                ++index;
+            int index = end;
+            while(index > start && resultTable[start][index] == Float.POSITIVE_INFINITY) {
+                --index;
             }
 
-            int via = next[start][index-1];
+            int via = next[start][index];
             float cost = resultTable[start][via];
             FareRoute detail = new FareRoute(getMoney(currency, resultTable[start][via]));
             for(int i = start; i <= via; ++i) {
